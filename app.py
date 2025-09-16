@@ -21,7 +21,7 @@ class AppController:
     - Plot erzeugen (inkl. Mehrfachauswahl Y)
     - Plot im GUI anzeigen und als PNG speichern
     """
-    def __init__(self, root: tk.Tk):
+    def __init__(self, root):
         self.root = root
 
         # GUI aufbauen
@@ -166,7 +166,6 @@ class AppController:
         y_cols = self._get_selected_y_cols()
 
         try:
-            # Line / Histogram / Stacked Area nutzen y_cols (1..n)
             if plot_type == "Line":
                 if not x_col or not y_cols:
                     raise ValueError("Für Line bitte X-Spalte und mindestens eine Y-Spalte wählen.")
@@ -182,7 +181,6 @@ class AppController:
                     raise ValueError("Für Stacked Area bitte X-Spalte und mindestens zwei Y-Spalten wählen.")
                 fig = make_plot("Stacked Area", self.df, x_col=x_col, y_cols=y_cols, title=self.current_filename)
 
-            # Pie / Polar erwarten Kategorie (X) + einen Wert (Y)
             elif plot_type == "Pie":
                 if not x_col or len(y_cols) != 1:
                     raise ValueError("Für Pie bitte X=Kategorie und genau eine Y-Spalte wählen.")
@@ -278,6 +276,3 @@ if __name__ == "__main__":
     root = tk.Tk()
     app = AppController(root)
     root.mainloop()
-
-
-#test with other csv
