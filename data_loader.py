@@ -41,3 +41,6 @@ def infer_columns(df: pd.DataFrame) -> Dict[str, List[str]]:
     numeric = df.select_dtypes(include=["number"]).columns.tolist()
     categorical = [c for c in df.columns if c not in numeric]
     return {"numeric": numeric, "datetime": [], "categorical": categorical}
+
+
+#end of file

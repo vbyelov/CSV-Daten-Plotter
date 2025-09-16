@@ -279,3 +279,7 @@ def make_plot(
 
     else:
         raise ValueError(f"Unbekannter Plot-Typ: {plot_type}")
+
+
+
+#other plots
