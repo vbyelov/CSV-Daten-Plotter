@@ -1,278 +1,279 @@
 # app.py
-# Einstiegspunkt der Anwendung.
-# Verbindet die GUI (ui_main.py) mit den Datenfunktionen (data_loader.py) und dem Plotter.
+# Einfache App-Logik für CSV Daten Plotter
+# - Steuert GUI
+# - Lädt CSV
+# - Ruft Plot-Funktionen auf
+# - Berechnet und zeigt Statistik (Basis + plotbezogen)
 
-import os
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import messagebox
 
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import pandas as pd
 
+import data_loader
+import plotter
 from ui_main import MainUI
-from data_loader import list_csv_files, load_csv, infer_columns
-from plotter import make_plot
 
 
-class AppController:
-    """
-    Steuert die App-Logik:
-    - Ordner wählen und CSV-Liste anzeigen
-    - CSV laden, Spalten analysieren
-    - Plot erzeugen (inkl. Mehrfachauswahl Y)
-    - Plot im GUI anzeigen und als PNG speichern
-    """
-    def __init__(self, root):
+class App:
+    def __init__(self, root: tk.Tk):
+        # Hauptfenster und UI
         self.root = root
+        self.root.title("CSV Daten Plotter")
+        self.ui = MainUI(root,
+                         on_select_folder=self.on_select_folder,
+                         on_select_file=self.on_select_file,
+                         on_plot=self.on_plot,
+                         on_save_png=self.on_save_png)
 
-        # GUI aufbauen
-        self.ui = MainUI(root)
-
-        # interner Zustand
+        # Zustand
         self.current_folder = None
-        self.current_filename = None
-        self.df = None
-        self.colinfo = None
+        self.current_file = None
+        self.df: pd.DataFrame | None = None   # pandas ist erlaubt; Union vermeiden wir sonst
 
-        # Plot/Canvas
-        self.current_figure = None
-        self.canvas = None
+    # -----------------------------
+    # 1) CSV laden und Basis-Statistik
+    # -----------------------------
+    def on_select_folder(self, folder_path: str):
+        """Wird von der UI aufgerufen, wenn ein Ordner gewählt wurde."""
+        self.current_folder = folder_path
+        self.ui.list_csv_files(folder_path)  # UI zeigt CSV-Dateien an
+        # Statistik-Panel leeren
+        self.ui.update_stats_panel("")
 
-        # Aktionen verbinden
-        self.ui.btn_choose_folder.configure(command=self.on_choose_folder)
-        self.ui.btn_load_file.configure(command=self.on_load_file)
-        self.ui.btn_plot.configure(state="disabled", command=self.on_plot)
-        self.ui.btn_save_png.configure(command=self.on_save_png)
-
-        # Doppelklick: Datei laden
-        self.ui.listbox_files.bind("<Double-Button-1>", self.on_double_click_file)
-
-    # ------------------------------
-    # Event-Handler
-    # ------------------------------
-
-    def on_choose_folder(self):
-        """Ordner wählen und CSV-Dateiliste füllen."""
-        folder = filedialog.askdirectory(title="Ordner mit CSV-Dateien wählen")
-        if not folder:
-            return
-
-        self.current_folder = folder
-        self.refresh_file_list()
-
-        # Zustand zurücksetzen
-        self.df = None
-        self.colinfo = None
-        self.ui.cmb_x.set("X-Spalte")
-        self.ui.cmb_x.configure(values=[])
-        self._fill_y_list([])
-        self.ui.btn_plot.configure(state="disabled")
-
-        # Plotbereich leeren
-        self._clear_plot_area()
-
-        # Titel aktualisieren
-        self.root.title(f"CSV Daten Plotter — {self.current_folder}")
-
-    def refresh_file_list(self):
-        """CSV-Dateien im gewählten Ordner anzeigen."""
-        self.ui.listbox_files.delete(0, tk.END)
-        if not self.current_folder:
-            return
-
-        files = list_csv_files(self.current_folder)
-        if not files:
-            messagebox.showinfo("Info", "Keine CSV-Dateien im Ordner gefunden.")
-            return
-
-        for name in files:
-            self.ui.listbox_files.insert(tk.END, name)
-
-    def on_double_click_file(self, event):
-        """Bei Doppelklick die Datei laden."""
-        self.on_load_file()
-
-    def on_load_file(self):
-        """CSV laden, Spalten erkennen und Auswahlfelder füllen."""
-        if not self.current_folder:
-            messagebox.showwarning("Hinweis", "Bitte zuerst einen Ordner wählen.")
-            return
-
-        selection = self.ui.listbox_files.curselection()
-        if not selection:
-            messagebox.showwarning("Hinweis", "Bitte zuerst eine CSV-Datei in der Liste auswählen.")
-            return
-
-        filename = self.ui.listbox_files.get(selection[0])
-        full_path = os.path.join(self.current_folder, filename)
-
-        # CSV laden
+    def on_select_file(self, file_path: str):
+        """Wird aufgerufen, wenn eine CSV-Datei in der Liste angeklickt wurde."""
         try:
-            df, used_enc = load_csv(full_path, sep=None)
-        except ValueError as e:
-            messagebox.showerror("Fehler beim Laden", str(e))
-            return
+            self.current_file = file_path
+            self.df = data_loader.load_csv(file_path)
 
-        # Spaltentypen erkennen
-        colinfo = infer_columns(df)
+            # Spalten in UI setzen (X/Y-Auswahl)
+            cols = list(self.df.columns)
+            self.ui.set_columns(cols)
 
-        # X-Kandidaten (alle Spalten)
-        all_cols = df.columns.tolist()
-        self.ui.cmb_x.configure(values=all_cols)
-        self.ui.cmb_x.set("X-Spalte")
+            # Basisstatistik berechnen und anzeigen
+            basic = compute_basic_stats(self.df)
+            basic_text = format_basic_stats(basic)
+            self.ui.update_stats_panel(basic_text)
 
-        # Y-Kandidaten (numerische Spalten)
-        numeric_cols = colinfo.get("numeric", [])
-        self._fill_y_list(numeric_cols)
+        except Exception as ex:
+            messagebox.showerror("Fehler beim Laden", str(ex))
+            self.df = None
+            self.ui.set_columns([])
+            self.ui.update_stats_panel("")
 
-        # Zustand speichern
-        self.current_filename = filename
-        self.df = df
-        self.colinfo = colinfo
-
-        # Plot möglich
-        self.ui.btn_plot.configure(state="normal")
-
-        # Plotbereich leeren
-        self._clear_plot_area()
-
-        # Feedback
-        messagebox.showinfo(
-            "Geladen",
-            (
-                f"Datei geladen: {filename}\n"
-                f"Encoding: {used_enc}\n"
-                f"Spalten gesamt: {len(all_cols)}\n"
-                f"Numerisch: {len(colinfo.get('numeric', []))}, "
-                f"Datum: {len(colinfo.get('datetime', []))}, "
-                f"Kategorisch: {len(colinfo.get('categorical', []))}"
-            )
-        )
-
-    def on_plot(self):
-        """Plot entsprechend der Auswahl erstellen und anzeigen."""
+    # -----------------------------
+    # 2) Plot zeichnen + plotbezogene Statistik
+    # -----------------------------
+    def on_plot(self, plot_type: str, x_col: str | None, y_cols: list[str] | None):
+        """Wird aufgerufen, wenn der Plot-Button geklickt wurde."""
         if self.df is None:
-            messagebox.showwarning("Hinweis", "Bitte zuerst eine CSV-Datei laden.")
+            messagebox.showinfo("Hinweis", "Bitte zuerst eine CSV-Datei laden.")
             return
-
-        plot_type = (self.ui.cmb_plot_type.get() or "").strip()
-        if not plot_type:
-            messagebox.showwarning("Hinweis", "Bitte zuerst einen Plottyp wählen.")
-            return
-
-        x_col = self.ui.cmb_x.get()
-        if x_col == "X-Spalte":
-            x_col = None
-
-        y_cols = self._get_selected_y_cols()
 
         try:
-            if plot_type == "Line":
-                if not x_col or not y_cols:
-                    raise ValueError("Für Line bitte X-Spalte und mindestens eine Y-Spalte wählen.")
-                fig = make_plot("Line", self.df, x_col=x_col, y_cols=y_cols, title=self.current_filename)
-
-            elif plot_type == "Histogram":
-                if not y_cols:
-                    raise ValueError("Für Histogramm bitte mindestens eine numerische Spalte wählen.")
-                fig = make_plot("Histogram", self.df, y_cols=y_cols, title=self.current_filename)
-
-            elif plot_type == "Stacked Area":
-                if not x_col or len(y_cols) < 2:
-                    raise ValueError("Für Stacked Area bitte X-Spalte und mindestens zwei Y-Spalten wählen.")
-                fig = make_plot("Stacked Area", self.df, x_col=x_col, y_cols=y_cols, title=self.current_filename)
-
-            elif plot_type == "Pie":
-                if not x_col or len(y_cols) != 1:
-                    raise ValueError("Für Pie bitte X=Kategorie und genau eine Y-Spalte wählen.")
-                fig = make_plot("Pie", self.df, category_col=x_col, value_col=y_cols[0], title=self.current_filename)
-
-            elif plot_type == "Polar":
-                if not x_col or len(y_cols) != 1:
-                    raise ValueError("Für Polar bitte X=Kategorie und genau eine Y-Spalte wählen.")
-                fig = make_plot("Polar", self.df, category_col=x_col, value_col=y_cols[0], title=self.current_filename)
-
+            # Eingaben prüfen (einfach und freundlich)
+            if plot_type in ("Pie", "Polar"):
+                # Für Pie/Polar: X = Kategorie, genau 1 Y-Spalte
+                if not x_col or not y_cols or len(y_cols) != 1:
+                    messagebox.showinfo(
+                        "Eingabe prüfen",
+                        "Für Pie/Polar bitte eine Kategorie-Spalte (X) und genau eine Y-Spalte wählen."
+                    )
+                    return
             else:
-                raise ValueError(f"Unbekannter Plot-Typ: {plot_type}")
+                # Für Line / Stacked Area / Histogram: mind. 1 Y-Spalte
+                if not y_cols or len(y_cols) == 0:
+                    messagebox.showinfo(
+                        "Eingabe prüfen",
+                        "Bitte mindestens eine Y-Spalte wählen."
+                    )
+                    return
 
-        except ValueError as e:
-            messagebox.showerror("Plot-Fehler", str(e))
-            return
-        except Exception as e:
-            messagebox.showerror("Unerwarteter Fehler", f"{type(e).__name__}: {e}")
-            return
+            # Plot zeichnen
+            ax = self.ui.get_plot_axes()
+            ax.clear()
 
-        self._render_figure(fig)
+            if plot_type == "Line":
+                plotter.plot_line(ax, self.df, x_col, y_cols)
+            elif plot_type == "Histogram":
+                plotter.plot_histogram(ax, self.df, y_cols)
+            elif plot_type == "Stacked Area":
+                plotter.plot_stacked_area(ax, self.df, x_col, y_cols)
+            elif plot_type == "Pie":
+                plotter.plot_pie(ax, self.df, x_col, y_cols[0])
+            elif plot_type == "Polar":
+                plotter.plot_polar(ax, self.df, x_col, y_cols[0])
+            else:
+                messagebox.showinfo("Hinweis", f"Unbekannter Plot-Typ: {plot_type}")
+                return
 
+            self.ui.draw_canvas()
+
+            # Plot-bezogene Statistik berechnen und anzeigen
+            plot_stats = compute_plot_stats(self.df, plot_type, x_col, y_cols)
+            plot_text = format_plot_stats(plot_type, plot_stats)
+            self.ui.update_stats_panel(plot_text)
+
+        except Exception as ex:
+            messagebox.showerror("Fehler beim Plotten", str(ex))
+
+    # -----------------------------
+    # 3) PNG speichern
+    # -----------------------------
     def on_save_png(self):
-        """Aktuellen Plot als PNG speichern."""
-        if self.current_figure is None:
-            messagebox.showwarning("Hinweis", "Es gibt keinen Plot zum Speichern.")
-            return
-
-        initial = "plot.png"
-        if self.current_filename:
-            base, _ = os.path.splitext(self.current_filename)
-            initial = f"{base}.png"
-
-        path = filedialog.asksaveasfilename(
-            title="Plot als PNG speichern",
-            defaultextension=".png",
-            initialfile=initial,
-            filetypes=[("PNG-Datei", "*.png")]
-        )
-        if not path:
-            return
-
+        """PNG-Speicherung über UI auslösen."""
         try:
-            self.current_figure.savefig(path, dpi=150, bbox_inches="tight")
-        except Exception as e:
-            messagebox.showerror("Fehler beim Speichern", f"{type(e).__name__}: {e}")
-            return
+            self.ui.save_current_plot(self.current_file)
+        except Exception as ex:
+            messagebox.showerror("Fehler beim Speichern", str(ex))
 
-        messagebox.showinfo("Gespeichert", f"Plot gespeichert:\n{path}")
 
-    # ------------------------------
-    # Hilfsfunktionen (intern)
-    # ------------------------------
+# ============================================================
+# Statistik-Funktionen (einfach, gut lesbar)
+# ============================================================
 
-    def _fill_y_list(self, cols):
-        """Listbox der Y-Spalten befüllen (Mehrfachauswahl möglich)."""
-        self.ui.lst_y.delete(0, tk.END)
-        for c in cols:
-            self.ui.lst_y.insert(tk.END, c)
+def compute_basic_stats(df: pd.DataFrame) -> dict:
+    """
+    Einfache Basisstatistik nach dem Laden:
+    - Zeilen / Spalten
+    - Anzahl numerischer / kategorischer Spalten
+    """
+    numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
+    categorical_cols = [c for c in df.columns if c not in numeric_cols]
 
-    def _get_selected_y_cols(self):
-        """Ausgewählte Y-Spalten aus der Listbox lesen."""
-        idxs = self.ui.lst_y.curselection()
-        return [self.ui.lst_y.get(i) for i in idxs]
+    return {
+        "rows": int(df.shape[0]),
+        "cols": int(df.shape[1]),
+        "numeric_count": len(numeric_cols),
+        "categorical_count": len(categorical_cols),
+    }
 
-    def _render_figure(self, fig):
-        """Figure im unteren Bereich anzeigen (vorherige Inhalte ersetzen)."""
-        if self.canvas is not None:
-            self.canvas.get_tk_widget().destroy()
-            self.canvas = None
 
-        if self.ui.lbl_placeholder.winfo_exists():
-            self.ui.lbl_placeholder.pack_forget()
+def compute_plot_stats(df: pd.DataFrame,
+                       plot_type: str,
+                       x_col: str | None,
+                       y_cols: list[str] | None) -> dict:
+    """
+    Plot-bezogene Statistik gemäß TZ:
+    - Line / Stacked Area / Histogram: count, mean, std, min, max je Y; Histogram zusätzlich median
+    - Pie / Polar: Summe pro Kategorie (Top-5), Gesamt, Anzahl Kategorien
+    Rückgabe als einfaches dict für die UI.
+    """
+    result = {"type": plot_type}
 
-        self.current_figure = fig
-        self.canvas = FigureCanvasTkAgg(fig, master=self.ui.frame_plot)
-        self.canvas.draw()
-        self.canvas.get_tk_widget().pack(fill="both", expand=True)
+    if plot_type in ("Line", "Stacked Area", "Histogram"):
+        if not y_cols:
+            return result
 
-    def _clear_plot_area(self):
-        """Plot-Bereich leeren und Platzhalter anzeigen."""
-        self.current_figure = None
-        if self.canvas is not None:
-            self.canvas.get_tk_widget().destroy()
-            self.canvas = None
+        stats_per_y = {}
+        for y in y_cols:
+            s = pd.to_numeric(df[y], errors="coerce").dropna()
+            if s.empty:
+                stats_per_y[y] = {"count": 0}
+                continue
 
-        if self.ui.lbl_placeholder.winfo_exists():
-            self.ui.lbl_placeholder.pack_forget()
-            self.ui.lbl_placeholder.pack(expand=True)
+            entry = {
+                "count": int(s.count()),
+                "mean": float(s.mean()),
+                "std": float(s.std(ddof=1)) if s.count() > 1 else 0.0,
+                "min": float(s.min()),
+                "max": float(s.max()),
+            }
+            if plot_type == "Histogram":
+                entry["median"] = float(s.median())
+            stats_per_y[y] = entry
+
+        result["per_y"] = stats_per_y
+        return result
+
+    if plot_type in ("Pie", "Polar"):
+        # Aggregation pro Kategorie (Summe)
+        if not x_col or not y_cols:
+            return result
+        y = y_cols[0]
+        # Nur numerische Werte summieren
+        s = pd.to_numeric(df[y], errors="coerce")
+        tmp = df.copy()
+        tmp[y] = s
+        grouped = tmp.groupby(x_col, dropna=True, as_index=False)[y].sum()
+        grouped = grouped.sort_values(by=y, ascending=False)
+
+        total = float(grouped[y].sum()) if not grouped.empty else 0.0
+        n_cat = int(grouped.shape[0])
+        top5 = grouped.head(5)
+
+        # In einfache Struktur bringen
+        top5_list = []
+        for _, row in top5.iterrows():
+            top5_list.append({"category": str(row[x_col]), "sum": float(row[y])})
+
+        result["total_sum"] = total
+        result["n_categories"] = n_cat
+        result["top5"] = top5_list
+        return result
+
+    return result
+
+
+# ============================================================
+# Hilfsfunktionen für UI-Text
+# ============================================================
+
+def format_basic_stats(basic: dict) -> str:
+    """Erzeugt einen klaren Textblock für die Basisstatistik."""
+    lines = [
+        "=== Basisstatistik (nach dem Laden) ===",
+        f"Zeilen: {basic.get('rows', 0)}",
+        f"Spalten: {basic.get('cols', 0)}",
+        f"Numerische Spalten: {basic.get('numeric_count', 0)}",
+        f"Kategorische Spalten: {basic.get('categorical_count', 0)}",
+    ]
+    return "\n".join(lines)
+
+
+def format_plot_stats(plot_type: str, data: dict) -> str:
+    """Erzeugt einen klaren Textblock für die plotbezogene Statistik."""
+    if plot_type in ("Line", "Stacked Area", "Histogram"):
+        lines = [f"=== Plot-Statistik: {plot_type} ==="]
+        per_y = data.get("per_y", {})
+        if not per_y:
+            lines.append("Keine numerischen Werte gefunden.")
+            return "\n".join(lines)
+
+        for y, s in per_y.items():
+            lines.append(f"[{y}] count={s.get('count', 0)}, "
+                         f"mean={round(s.get('mean', 0.0), 3)}, "
+                         f"std={round(s.get('std', 0.0), 3)}, "
+                         f"min={round(s.get('min', 0.0), 3)}, "
+                         f"max={round(s.get('max', 0.0), 3)}")
+            if plot_type == "Histogram" and "median" in s:
+                lines[-1] += f", median={round(s['median'], 3)}"
+        return "\n".join(lines)
+
+    if plot_type in ("Pie", "Polar"):
+        lines = [f"=== Plot-Statistik: {plot_type} ==="]
+        total = data.get("total_sum", 0.0)
+        n_cat = data.get("n_categories", 0)
+        lines.append(f"Gesamtsumme: {round(total, 3)}")
+        lines.append(f"Anzahl Kategorien: {n_cat}")
+        lines.append("Top-5 Kategorien (Summe):")
+        for item in data.get("top5", []):
+            lines.append(f"- {item['category']}: {round(item['sum'], 3)}")
+        return "\n".join(lines)
+
+    return f"=== Plot-Statistik: {plot_type} ===\nKeine Daten."
+
+
+# ============================================================
+# Start
+# ============================================================
+
+def main():
+    root = tk.Tk()
+    app = App(root)
+    root.mainloop()
 
 
 if __name__ == "__main__":
-    root = tk.Tk()
-    app = AppController(root)
-    root.mainloop()
+    main()

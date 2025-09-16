@@ -1,278 +1,255 @@
 # plotter.py
-# Einfache Plot-Funktionen für das Projekt "CSV Daten Plotter".
-# Ziel: Sehr gut lesbarer Code, wenige Abhängigkeiten, deutsche Kommentare.
-# Matplotlib erstellt jeweils eine Figure, die an die GUI übergeben werden kann.
+# Plot-Funktionen für fünf Diagrammtypen:
+# Line, Histogram, Stacked Area, Pie, Polar (einfach als "radiale" Darstellung)
+#
+# Hinweise:
+# - Fokus auf einfache, gut lesbare Implementierung.
+# - Für "Polar" nutzen wir eine leichte radiale Darstellung auf Kartesisch,
+#   damit die UI-Achse (ax) nicht in eine echte Polar-Achse umgebaut werden muss.
+#   Kategorien werden gleichmäßig als Winkel verteilt, der Wert ist der Radius.
 
+import math
 import numpy as np
 import pandas as pd
-from matplotlib.figure import Figure
 
 
-# -------------------------------------------------------------
-# Hilfsfunktionen
-# -------------------------------------------------------------
+# --------------------------------------------------------
+# 1) LINE
+# --------------------------------------------------------
+def plot_line(ax, df, x_col, y_cols):
+    """Einfache Liniengrafik. X kann Kategorie/Datum sein, Y sind numerische Spalten."""
+    ax.grid(True, linestyle="--", alpha=0.3)
 
-def _new_figure(figsize=(8, 5)):
-    """Erzeugt eine neue Matplotlib-Figure in einheitlicher Größe."""
-    fig = Figure(figsize=figsize)
-    return fig
+    # X-Achse
+    if x_col and x_col in df.columns:
+        x = df[x_col]
+    else:
+        x = df.index  # Fallback
 
+    # Y-Serien plotten (nur numerische)
+    plotted_any = False
+    for y in (y_cols or []):
+        if y not in df.columns:
+            continue
+        s = pd.to_numeric(df[y], errors="coerce")
+        if s.notna().sum() == 0:
+            continue
+        ax.plot(x, s, label=y)
+        plotted_any = True
 
-def _require_columns(df, cols):
-    """Prüft, ob alle Spalten im DataFrame vorhanden sind."""
-    missing = [c for c in cols if c not in df.columns]
-    if missing:
-        raise ValueError(f"Spalte(n) fehlen: {', '.join(missing)}")
-
-
-def _ensure_numeric(df, cols):
-    """Konvertiert die genannten Spalten (kopiert) in numerische Werte (errors='coerce')."""
-    cpy = df.copy()
-    for c in cols:
-        cpy[c] = pd.to_numeric(cpy[c], errors="coerce")
-    return cpy
-
-
-# -------------------------------------------------------------
-# Linien-Plot (Line)
-# -------------------------------------------------------------
-
-def plot_line(df, x_col, y_cols, title=None):
-    """
-    Einfacher Linien-Plot.
-    - x_col: X-Achse (kann Datum, Kategorie oder numerisch sein)
-    - y_cols: eine oder mehrere numerische Spalten
-    """
-    _require_columns(df, [x_col] + y_cols)
-
-    # numerische Y-Spalten sicherstellen
-    df_num = _ensure_numeric(df[[x_col] + y_cols], y_cols)
-
-    fig = _new_figure()
-    ax = fig.add_subplot(111)
-
-    # Datum automatisch erkennen und hübsch formatieren
-    x = df_num[x_col]
-    try:
-        x_parsed = pd.to_datetime(x, errors="raise")
-        x = x_parsed
-    except Exception:
-        pass  # wenn nicht als Datum interpretierbar, einfach so lassen
-
-    for y in y_cols:
-        ax.plot(x, df_num[y], label=y)
-
-    ax.set_xlabel(x_col)
+    ax.set_title("Linien-Diagramm")
+    ax.set_xlabel(x_col if x_col else "Index")
     ax.set_ylabel("Wert")
-    if title:
-        ax.set_title(title)
-    if len(y_cols) > 1:
+    if plotted_any:
         ax.legend(loc="best")
-    ax.grid(True, linestyle=":", linewidth=0.5)
-    fig.tight_layout()
-    return fig
+    _rotate_xticks_if_needed(ax)
 
 
-# -------------------------------------------------------------
-# Histogramm
-# -------------------------------------------------------------
+# --------------------------------------------------------
+# 2) HISTOGRAM
+# --------------------------------------------------------
+def plot_histogram(ax, df, y_cols, bins=30):
+    """Histogramme mehrerer numerischer Spalten (gemeinsame X-Achse für Bins)."""
+    ax.grid(True, linestyle="--", alpha=0.3)
 
-def plot_histogram(df, cols, bins=20, title=None):
-    """
-    Histogramm für eine oder mehrere numerische Spalten.
-    - cols: Liste numerischer Spalten
-    - bins: Anzahl Klassen
-    """
-    _require_columns(df, cols)
-    df_num = _ensure_numeric(df[cols], cols)
+    # Daten sammeln (nur numerische Spalten)
+    plotted_any = False
+    for y in (y_cols or []):
+        if y not in df.columns:
+            continue
+        s = pd.to_numeric(df[y], errors="coerce").dropna()
+        if s.empty:
+            continue
+        ax.hist(s, bins=bins, alpha=0.6, label=y)
+        plotted_any = True
 
-    fig = _new_figure()
-    ax = fig.add_subplot(111)
-
-    # NaN-Werte entfernen, sonst meckert matplotlib
-    data = [df_num[c].dropna().values for c in cols]
-
-    # mehrere Datensätze werden übereinander transparent angezeigt
-    ax.hist(data, bins=bins, alpha=0.7, label=cols)
-
+    ax.set_title("Histogramm")
     ax.set_xlabel("Wert")
     ax.set_ylabel("Häufigkeit")
-    if title:
-        ax.set_title(title)
-    if len(cols) > 1:
+    if plotted_any:
         ax.legend(loc="best")
-    ax.grid(True, linestyle=":", linewidth=0.5)
-    fig.tight_layout()
-    return fig
 
 
-# -------------------------------------------------------------
-# Kreisdiagramm (Pie)
-# -------------------------------------------------------------
+# --------------------------------------------------------
+# 3) STACKED AREA
+# --------------------------------------------------------
+def plot_stacked_area(ax, df, x_col, y_cols):
+    """Gestapeltes Flächendiagramm (mind. 2 numerische Spalten)."""
+    ax.grid(True, linestyle="--", alpha=0.3)
 
-def plot_pie(df, category_col, value_col, title=None):
-    """
-    Kreisdiagramm aus Kategorien + Werten.
-    Falls mehrere Zeilen pro Kategorie existieren, werden die Werte summiert.
-    """
-    _require_columns(df, [category_col, value_col])
+    # X-Achse
+    if x_col and x_col in df.columns:
+        x_raw = df[x_col]
+    else:
+        x_raw = df.index
 
-    # gruppieren, damit jede Kategorie einmal vorkommt
-    grouped = df.groupby(category_col, dropna=False)[value_col].sum().sort_values(ascending=False)
+    # Y-Matrix vorbereiten (nur numerisch)
+    series_list = []
+    labels = []
+    for y in (y_cols or []):
+        if y not in df.columns:
+            continue
+        s = pd.to_numeric(df[y], errors="coerce")
+        series_list.append(s)
+        labels.append(y)
 
-    # nur numerische Werte
-    grouped = pd.to_numeric(grouped, errors="coerce").dropna()
+    if len(series_list) == 0:
+        ax.text(0.5, 0.5, "Keine numerischen Y-Spalten.", ha="center", va="center", transform=ax.transAxes)
+        return
+
+    # Fehlende Werte als 0 interpretieren (einfach und robust)
+    Y = pd.concat(series_list, axis=1)
+    Y.columns = labels
+    Y = Y.fillna(0.0)
+
+    # X als Positionen (0..n-1) + Ticks mit Labels
+    x_pos = np.arange(len(x_raw))
+    ax.stackplot(x_pos, Y.values.T, labels=labels)
+    ax.set_title("Gestapeltes Flächendiagramm")
+    ax.set_xlabel(x_col if x_col else "Index")
+    ax.set_ylabel("Wert")
+    ax.legend(loc="best")
+
+    # Schöne X-Beschriftung
+    ax.set_xticks(_sparse_ticks(x_pos))
+    ax.set_xticklabels(_sparse_ticklabels(x_raw, x_pos))
+    _rotate_xticks_if_needed(ax)
+
+
+# --------------------------------------------------------
+# 4) PIE
+# --------------------------------------------------------
+def plot_pie(ax, df, x_col, y_col):
+    """Kreisdiagramm: Summe pro Kategorie."""
+    ax.grid(False)
+
+    if x_col not in df.columns or y_col not in df.columns:
+        ax.text(0.5, 0.5, "Spalten nicht gefunden.", ha="center", va="center", transform=ax.transAxes)
+        return
+
+    s = pd.to_numeric(df[y_col], errors="coerce")
+    tmp = df.copy()
+    tmp[y_col] = s
+
+    grouped = tmp.groupby(x_col, dropna=True, as_index=False)[y_col].sum()
     if grouped.empty:
-        raise ValueError("Keine numerischen Werte für das Kreisdiagramm gefunden.")
+        ax.text(0.5, 0.5, "Keine Daten.", ha="center", va="center", transform=ax.transAxes)
+        return
 
-    labels = grouped.index.astype(str).tolist()
-    sizes = grouped.values
+    # Optional: zu viele Kategorien -> Top 10 + Rest (für bessere Lesbarkeit)
+    grouped = grouped.sort_values(by=y_col, ascending=False)
+    if len(grouped) > 10:
+        top = grouped.head(9)
+        rest_sum = grouped.iloc[9:][y_col].sum()
+        grouped = pd.concat([top, pd.DataFrame({x_col: ["Andere"], y_col: [rest_sum]})], ignore_index=True)
 
-    fig = _new_figure()
-    ax = fig.add_subplot(111)
-    ax.pie(sizes, labels=labels, autopct="%1.1f%%", startangle=90)
-    ax.axis("equal")  # kreisrund
-    if title:
-        ax.set_title(title)
-    fig.tight_layout()
-    return fig
+    ax.pie(grouped[y_col].values,
+           labels=[str(v) for v in grouped[x_col].values],
+           autopct="%1.1f%%",
+           startangle=90)
+    ax.axis("equal")  # Kreis
+    ax.set_title(f"Kreisdiagramm (Summe von '{y_col}' pro '{x_col}')")
 
 
-# -------------------------------------------------------------
-# Gestapeltes Flächendiagramm (Stacked Area)
-# -------------------------------------------------------------
-
-def plot_stacked_area(df, x_col, y_cols, title=None):
+# --------------------------------------------------------
+# 5) POLAR (radiale, einfache Darstellung auf Kartesisch)
+# --------------------------------------------------------
+def plot_polar(ax, df, x_col, y_col):
     """
-    Gestapeltes Flächendiagramm über eine X-Achse (Zeit, Kategorie oder numerisch).
-    - y_cols: mindestens zwei numerische Spalten sind sinnvoll
+    Polar (einfach): Kategorien werden gleichmäßig auf 0..2π verteilt.
+    Der Wert ist der Radius. Wir zeichnen Strahlen vom Ursprung.
     """
-    if len(y_cols) < 2:
-        raise ValueError("Für Stacked Area bitte mindestens zwei numerische Spalten wählen.")
+    ax.grid(True, linestyle="--", alpha=0.3)
 
-    _require_columns(df, [x_col] + y_cols)
+    if x_col not in df.columns or y_col not in df.columns:
+        ax.text(0.5, 0.5, "Spalten nicht gefunden.", ha="center", va="center", transform=ax.transAxes)
+        return
 
-    df_num = _ensure_numeric(df[[x_col] + y_cols], y_cols)
+    s = pd.to_numeric(df[y_col], errors="coerce")
+    tmp = df.copy()
+    tmp[y_col] = s
 
-    # X ggf. in Datum umwandeln (für schönere Achse)
-    x = df_num[x_col]
+    grouped = tmp.groupby(x_col, dropna=True, as_index=False)[y_col].sum()
+    grouped = grouped.sort_values(by=y_col, ascending=False)
+    if grouped.empty:
+        ax.text(0.5, 0.5, "Keine Daten.", ha="center", va="center", transform=ax.transAxes)
+        return
+
+    # Winkel und Radien
+    n = len(grouped)
+    angles = [2 * math.pi * i / n for i in range(n)]
+    radii = grouped[y_col].values.astype(float)
+    labels = [str(v) for v in grouped[x_col].values]
+
+    # Skala bestimmen
+    r_max = float(max(radii))
+    pad = r_max * 0.1 if r_max > 0 else 1.0
+    r_lim = r_max + pad
+
+    # Strahlen zeichnen
+    for theta, r, lab in zip(angles, radii, labels):
+        x = r * math.cos(theta)
+        y = r * math.sin(theta)
+        ax.plot([0, x], [0, y], linewidth=2)
+        # Marker am Ende
+        ax.scatter([x], [y], s=30)
+
+    # Hilfskreise (nur als optische Führung)
+    _draw_circle(ax, radius=r_lim, segments=200, alpha=0.15)
+    _draw_circle(ax, radius=r_lim * 0.5, segments=160, alpha=0.08)
+
+    # Labels am Rand
+    label_radius = r_lim * 1.06
+    for theta, lab in zip(angles, labels):
+        lx = label_radius * math.cos(theta)
+        ly = label_radius * math.sin(theta)
+        ax.text(lx, ly, lab, ha="center", va="center")
+
+    ax.set_aspect("equal", adjustable="datalim")
+    ax.set_xlim(-label_radius * 1.15, label_radius * 1.15)
+    ax.set_ylim(-label_radius * 1.15, label_radius * 1.15)
+    ax.set_xlabel("")
+    ax.set_ylabel("")
+    ax.set_title(f"Polar (einfach) – Radius = Summe von '{y_col}' pro '{x_col}'")
+
+
+# ========================================================
+# Hilfsfunktionen
+# ========================================================
+def _rotate_xticks_if_needed(ax, angle=30):
+    """Dreht X-Beschriftung leicht, falls viele Werte vorhanden sind."""
     try:
-        x_parsed = pd.to_datetime(x, errors="raise")
-        x = x_parsed
+        ticks = ax.get_xticks()
+        if len(ticks) > 8:
+            for label in ax.get_xticklabels():
+                label.set_rotation(angle)
+                label.set_ha("right")
     except Exception:
         pass
 
-    fig = _new_figure()
-    ax = fig.add_subplot(111)
 
-    y_data = [df_num[c].fillna(0.0).values for c in y_cols]
-    ax.stackplot(x, *y_data, labels=y_cols)
-
-    ax.set_xlabel(x_col)
-    ax.set_ylabel("Wert")
-    if title:
-        ax.set_title(title)
-    ax.legend(loc="upper left")
-    ax.grid(True, linestyle=":", linewidth=0.5)
-    fig.tight_layout()
-    return fig
+def _sparse_ticks(x_positions, max_ticks=12):
+    """Reduziert die Anzahl der Ticks auf max_ticks (gleichmäßig verteilt)."""
+    n = len(x_positions)
+    if n <= max_ticks:
+        return x_positions
+    step = max(1, int(round(n / max_ticks)))
+    return x_positions[::step]
 
 
-# -------------------------------------------------------------
-# Polar-Plot (kategorisch -> Winkel, Werte -> Radius)
-# -------------------------------------------------------------
-
-def plot_polar(df, category_col, value_col, title=None):
-    """
-    Polar-Plot für Kategorien.
-    Idee: Jede Kategorie erhält einen Winkel (gleichmäßig verteilt), der Wert ist der Radius.
-    """
-    _require_columns(df, [category_col, value_col])
-
-    # ggf. aggregieren, damit jede Kategorie einmal vorkommt
-    grouped = df.groupby(category_col, dropna=False)[value_col].sum()
-    grouped = pd.to_numeric(grouped, errors="coerce").dropna()
-    if grouped.empty:
-        raise ValueError("Keine numerischen Werte für den Polar-Plot gefunden.")
-
-    labels = grouped.index.astype(str).tolist()
-    r = grouped.values.astype(float)
-
-    # Winkel gleichmäßig über 0..2π verteilen und zum Schließen den ersten Punkt anhängen
-    n = len(r)
-    if n == 0:
-        raise ValueError("Es wurden keine Kategorien gefunden.")
-
-    theta = np.linspace(0.0, 2.0 * np.pi, num=n, endpoint=False)
-    theta = np.append(theta, theta[0])
-    r = np.append(r, r[0])
-
-    fig = _new_figure()
-    ax = fig.add_subplot(111, projection="polar")
-
-    ax.plot(theta, r)
-    ax.fill(theta, r, alpha=0.25)
-
-    # Ticks mit Kategorien beschriften (ohne den duplizierten letzten Punkt)
-    ax.set_xticks(np.linspace(0.0, 2.0 * np.pi, num=n, endpoint=False))
-    ax.set_xticklabels(labels, fontsize=8)
-    ax.set_yticklabels([])  # optional: radialen Text ausblenden
-
-    if title:
-        ax.set_title(title, va="bottom")
-
-    fig.tight_layout()
-    return fig
+def _sparse_ticklabels(x_labels, x_positions):
+    """Gibt zu den sparse Ticks die passenden Labels zurück."""
+    labels = []
+    pos_set = set(x_positions)
+    for i, v in enumerate(x_labels):
+        if i in pos_set:
+            labels.append(str(v))
+    return labels
 
 
-# -------------------------------------------------------------
-# Dispatcher (optional): einheitlicher Einstiegspunkt
-# -------------------------------------------------------------
-
-def make_plot(
-    plot_type,
-    df,
-    x_col=None,
-    y_cols=None,
-    category_col=None,
-    value_col=None,
-    **kwargs,
-):
-    """
-    Zentraler Einstieg: wählt anhand von plot_type die passende Funktion.
-    Erwartete Werte:
-      - "Line": x_col + y_cols
-      - "Histogram": cols = y_cols
-      - "Pie": category_col + value_col
-      - "Stacked Area": x_col + y_cols
-      - "Polar": category_col + value_col
-    """
-    pt = (plot_type or "").strip().lower()
-
-    if pt == "line":
-        if not x_col or not y_cols:
-            raise ValueError("Für Line bitte X-Spalte und mindestens eine Y-Spalte wählen.")
-        return plot_line(df, x_col, y_cols, title=kwargs.get("title"))
-
-    elif pt == "histogram":
-        if not y_cols:
-            raise ValueError("Für Histogramm bitte mindestens eine numerische Spalte wählen.")
-        return plot_histogram(df, y_cols, bins=kwargs.get("bins", 20), title=kwargs.get("title"))
-
-    elif pt == "pie":
-        if not category_col or not value_col:
-            raise ValueError("Für Pie bitte Kategorie- und Werte-Spalte wählen.")
-        return plot_pie(df, category_col, value_col, title=kwargs.get("title"))
-
-    elif pt == "stacked area":
-        if not x_col or not y_cols:
-            raise ValueError("Für Stacked Area bitte X-Spalte und mindestens zwei Y-Spalten wählen.")
-        return plot_stacked_area(df, x_col, y_cols, title=kwargs.get("title"))
-
-    elif pt == "polar":
-        if not category_col or not value_col:
-            raise ValueError("Für Polar bitte Kategorie- und Werte-Spalte wählen.")
-        return plot_polar(df, category_col, value_col, title=kwargs.get("title"))
-
-    else:
-        raise ValueError(f"Unbekannter Plot-Typ: {plot_type}")
+def _draw_circle(ax, radius=1.0, segments=200, alpha=0.1):
+    """Zeichnet einen leichten Kreis zur Orientierung."""
+    t = np.linspace(0, 2 * math.pi, segments)
+    x = radius * np.cos(t)
+    y = radius * np.sin(t)
+    ax.plot(x, y, linestyle="-", linewidth=1, alpha=alpha)
