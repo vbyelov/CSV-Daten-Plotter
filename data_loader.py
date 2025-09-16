@@ -2,18 +2,16 @@
 # Einfache Hilfsfunktionen zum Arbeiten mit CSV-Dateien.
 # Ziel: maximal lesbarer, kurzer Code ohne komplexe Heuristiken.
 
-from __future__ import annotations
 import os
-from typing import Dict, List, Tuple
 import pandas as pd
 
 
-def is_csv_file(path: str) -> bool:
+def is_csv_file(path):
     """True, wenn Pfad eine Datei mit Endung .csv ist."""
     return os.path.isfile(path) and path.lower().endswith(".csv")
 
 
-def list_csv_files(folder: str) -> List[str]:
+def list_csv_files(folder):
     """Gibt alle CSV-Dateinamen im Ordner zurück (kein Rekurs)."""
     if not os.path.isdir(folder):
         return []
@@ -21,7 +19,7 @@ def list_csv_files(folder: str) -> List[str]:
                    if is_csv_file(os.path.join(folder, name))])
 
 
-def load_csv(path: str, sep: str | None = None) -> Tuple[pd.DataFrame, str]:
+def load_csv(path, sep=None):
     """
     Lädt eine CSV als DataFrame.
     Annahmen: UTF-8, Trennzeichen auto (sep=None).
@@ -31,7 +29,7 @@ def load_csv(path: str, sep: str | None = None) -> Tuple[pd.DataFrame, str]:
     return df, "utf-8"
 
 
-def infer_columns(df: pd.DataFrame) -> Dict[str, List[str]]:
+def infer_columns(df):
     """
     Ermittelt einfache Spaltentypen:
     - 'numeric': numerische Spalten (int/float)
@@ -41,6 +39,3 @@ def infer_columns(df: pd.DataFrame) -> Dict[str, List[str]]:
     numeric = df.select_dtypes(include=["number"]).columns.tolist()
     categorical = [c for c in df.columns if c not in numeric]
     return {"numeric": numeric, "datetime": [], "categorical": categorical}
-
-
-#end of file

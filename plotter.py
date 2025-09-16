@@ -3,9 +3,6 @@
 # Ziel: Sehr gut lesbarer Code, wenige Abhängigkeiten, deutsche Kommentare.
 # Matplotlib erstellt jeweils eine Figure, die an die GUI übergeben werden kann.
 
-from __future__ import annotations
-from typing import List, Optional
-
 import numpy as np
 import pandas as pd
 from matplotlib.figure import Figure
@@ -15,20 +12,20 @@ from matplotlib.figure import Figure
 # Hilfsfunktionen
 # -------------------------------------------------------------
 
-def _new_figure(figsize=(8, 5)) -> Figure:
+def _new_figure(figsize=(8, 5)):
     """Erzeugt eine neue Matplotlib-Figure in einheitlicher Größe."""
     fig = Figure(figsize=figsize)
     return fig
 
 
-def _require_columns(df: pd.DataFrame, cols: List[str]):
+def _require_columns(df, cols):
     """Prüft, ob alle Spalten im DataFrame vorhanden sind."""
     missing = [c for c in cols if c not in df.columns]
     if missing:
         raise ValueError(f"Spalte(n) fehlen: {', '.join(missing)}")
 
 
-def _ensure_numeric(df: pd.DataFrame, cols: List[str]) -> pd.DataFrame:
+def _ensure_numeric(df, cols):
     """Konvertiert die genannten Spalten (kopiert) in numerische Werte (errors='coerce')."""
     cpy = df.copy()
     for c in cols:
@@ -40,7 +37,7 @@ def _ensure_numeric(df: pd.DataFrame, cols: List[str]) -> pd.DataFrame:
 # Linien-Plot (Line)
 # -------------------------------------------------------------
 
-def plot_line(df: pd.DataFrame, x_col: str, y_cols: List[str], title: Optional[str] = None) -> Figure:
+def plot_line(df, x_col, y_cols, title=None):
     """
     Einfacher Linien-Plot.
     - x_col: X-Achse (kann Datum, Kategorie oder numerisch sein)
@@ -80,7 +77,7 @@ def plot_line(df: pd.DataFrame, x_col: str, y_cols: List[str], title: Optional[s
 # Histogramm
 # -------------------------------------------------------------
 
-def plot_histogram(df: pd.DataFrame, cols: List[str], bins: int = 20, title: Optional[str] = None) -> Figure:
+def plot_histogram(df, cols, bins=20, title=None):
     """
     Histogramm für eine oder mehrere numerische Spalten.
     - cols: Liste numerischer Spalten
@@ -113,7 +110,7 @@ def plot_histogram(df: pd.DataFrame, cols: List[str], bins: int = 20, title: Opt
 # Kreisdiagramm (Pie)
 # -------------------------------------------------------------
 
-def plot_pie(df: pd.DataFrame, category_col: str, value_col: str, title: Optional[str] = None) -> Figure:
+def plot_pie(df, category_col, value_col, title=None):
     """
     Kreisdiagramm aus Kategorien + Werten.
     Falls mehrere Zeilen pro Kategorie existieren, werden die Werte summiert.
@@ -145,7 +142,7 @@ def plot_pie(df: pd.DataFrame, category_col: str, value_col: str, title: Optiona
 # Gestapeltes Flächendiagramm (Stacked Area)
 # -------------------------------------------------------------
 
-def plot_stacked_area(df: pd.DataFrame, x_col: str, y_cols: List[str], title: Optional[str] = None) -> Figure:
+def plot_stacked_area(df, x_col, y_cols, title=None):
     """
     Gestapeltes Flächendiagramm über eine X-Achse (Zeit, Kategorie oder numerisch).
     - y_cols: mindestens zwei numerische Spalten sind sinnvoll
@@ -185,7 +182,7 @@ def plot_stacked_area(df: pd.DataFrame, x_col: str, y_cols: List[str], title: Op
 # Polar-Plot (kategorisch -> Winkel, Werte -> Radius)
 # -------------------------------------------------------------
 
-def plot_polar(df: pd.DataFrame, category_col: str, value_col: str, title: Optional[str] = None) -> Figure:
+def plot_polar(df, category_col, value_col, title=None):
     """
     Polar-Plot für Kategorien.
     Idee: Jede Kategorie erhält einen Winkel (gleichmäßig verteilt), der Wert ist der Radius.
@@ -233,14 +230,14 @@ def plot_polar(df: pd.DataFrame, category_col: str, value_col: str, title: Optio
 # -------------------------------------------------------------
 
 def make_plot(
-    plot_type: str,
-    df: pd.DataFrame,
-    x_col: Optional[str] = None,
-    y_cols: Optional[List[str]] = None,
-    category_col: Optional[str] = None,
-    value_col: Optional[str] = None,
+    plot_type,
+    df,
+    x_col=None,
+    y_cols=None,
+    category_col=None,
+    value_col=None,
     **kwargs,
-) -> Figure:
+):
     """
     Zentraler Einstieg: wählt anhand von plot_type die passende Funktion.
     Erwartete Werte:
@@ -279,7 +276,3 @@ def make_plot(
 
     else:
         raise ValueError(f"Unbekannter Plot-Typ: {plot_type}")
-
-
-
-#other plots
