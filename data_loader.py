@@ -19,14 +19,22 @@ def list_csv_files(folder):
                    if is_csv_file(os.path.join(folder, name))])
 
 
-def load_csv(path, sep=None):
+def load_csv(path):
     """
-    Lädt eine CSV als DataFrame.
-    Annahmen: UTF-8, Trennzeichen auto (sep=None).
-    Rückgabe: (DataFrame, verwendetes_encoding)
+    CSV-Datei laden und als DataFrame zurückgeben.
+    - Automatische Erkennung des Trennzeichens
+    - Entfernt leere / 'Unnamed' Spalten
     """
-    df = pd.read_csv(path, encoding="utf-8", sep=sep, engine="python")
-    return df, "utf-8"
+    # CSV laden (engine='python' für flexible Trennung)
+    df = pd.read_csv(path, sep=None, engine="python", encoding="utf-8")
+
+    # Spalten, die komplett leer sind, entfernen
+    df = df.dropna(axis=1, how="all")
+
+    # Spaltennamen 'Unnamed: ...' entfernen (z. B. leere Index-Spalte)
+    df = df.loc[:, ~df.columns.str.contains("^Unnamed")]
+
+    return df
 
 
 def infer_columns(df):

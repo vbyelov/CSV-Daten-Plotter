@@ -45,18 +45,33 @@ class App:
         """Wird aufgerufen, wenn eine CSV-Datei in der Liste angeklickt wurde."""
         try:
             self.current_file = file_path
-            self.df = data_loader.load_csv(file_path)
 
-            # Spalten in UI setzen (X/Y-Auswahl)
+            # --- Wichtig: load_csv kann entweder nur DataFrame zurückgeben
+            # oder ein Tuple (df, sep). Deshalb hier Abfrage:
+            res = data_loader.load_csv(file_path)
+            if isinstance(res, tuple):
+                df = res[0]  # erstes Element = DataFrame
+            else:
+                df = res
+
+            # Einfache Sicherheitsprüfung
+            if df is None:
+                raise ValueError("Leerer DataFrame erhalten.")
+
+            self.df = df
+
+            # Spalten in der UI anzeigen (für X/Y-Auswahl)
             cols = list(self.df.columns)
             self.ui.set_columns(cols)
 
-            # Basisstatistik berechnen und anzeigen
+            # Basisstatistik berechnen und im Panel anzeigen
             basic = compute_basic_stats(self.df)
             basic_text = format_basic_stats(basic)
             self.ui.update_stats_panel(basic_text)
 
         except Exception as ex:
+            # Fehlerdialog für den Nutzer
+            from tkinter import messagebox
             messagebox.showerror("Fehler beim Laden", str(ex))
             self.df = None
             self.ui.set_columns([])

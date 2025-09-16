@@ -18,6 +18,7 @@ import pandas as pd
 # --------------------------------------------------------
 def plot_line(ax, df, x_col, y_cols):
     """Einfache Liniengrafik. X kann Kategorie/Datum sein, Y sind numerische Spalten."""
+    ax.set_aspect("auto")
     ax.grid(True, linestyle="--", alpha=0.3)
 
     # X-Achse
@@ -50,6 +51,7 @@ def plot_line(ax, df, x_col, y_cols):
 # --------------------------------------------------------
 def plot_histogram(ax, df, y_cols, bins=30):
     """Histogramme mehrerer numerischer Spalten (gemeinsame X-Achse für Bins)."""
+    ax.set_aspect("auto")
     ax.grid(True, linestyle="--", alpha=0.3)
 
     # Daten sammeln (nur numerische Spalten)
@@ -75,6 +77,7 @@ def plot_histogram(ax, df, y_cols, bins=30):
 # --------------------------------------------------------
 def plot_stacked_area(ax, df, x_col, y_cols):
     """Gestapeltes Flächendiagramm (mind. 2 numerische Spalten)."""
+    ax.set_aspect("auto")
     ax.grid(True, linestyle="--", alpha=0.3)
 
     # X-Achse
@@ -121,6 +124,7 @@ def plot_stacked_area(ax, df, x_col, y_cols):
 # --------------------------------------------------------
 def plot_pie(ax, df, x_col, y_col):
     """Kreisdiagramm: Summe pro Kategorie."""
+    ax.set_aspect("auto")
     ax.grid(False)
 
     if x_col not in df.columns or y_col not in df.columns:
