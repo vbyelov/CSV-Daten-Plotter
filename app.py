@@ -6,7 +6,7 @@
 # - Validierung je Diagrammtyp
 # - Plot ausführen (ruft plotter.*)
 # - Statistik (nur als Text in "Details") anzeigen
-# - PNG speichern über Menü
+# - PNG speichern (Menü + Button neben Plot)
 # ------------------------------------------------------
 
 import os
@@ -32,10 +32,12 @@ class AppController:
         self.df: pd.DataFrame | None = None
         self.colinfo: dict | None = None
         self.current_csv_path: str | None = None
+        self.plot_done: bool = False
 
         # Events verbinden
         self.ui.btn_open.configure(command=self.on_open_file)
         self.ui.btn_plot.configure(command=self.on_plot_clicked)
+        self.ui.btn_save.configure(command=self.on_save_png)
 
         # Menüleiste (Speichern als PNG)
         menu = tk.Menu(root)
@@ -72,6 +74,7 @@ class AppController:
         self.df = df
         self.current_csv_path = path
         self.colinfo = infer_columns(df)
+        self.plot_done = False
 
         # Spaltenlisten füllen – ohne Vorauswahl
         cols = df.columns.tolist()
@@ -81,7 +84,7 @@ class AppController:
         for c in cols:
             self.ui.lst_y.insert(tk.END, c)
 
-        # Basisinfo direkt in Details anzeigen (Mini-Tabelle entfällt)
+        # Basisinfo in Details
         numeric_count = len(self.colinfo.get("numeric", []))
         categorical_count = len(self.colinfo.get("categorical", []))
         details = [
@@ -161,7 +164,6 @@ class AppController:
                 return False, "Histogram: Genau eine Y-Spalte wählen."
             if not self._all_numeric(ys):
                 return False, "Histogram: Y muss numerisch sein."
-            # KEIN Bins-Feld mehr – Standard 'auto' wird im Plotter verwendet.
 
         elif ptype == "Polar":
             if len(ys) != 1:
@@ -200,8 +202,10 @@ class AppController:
                 ax = self.ui.fig.add_subplot(111)
             self._draw_plot(ax)
             self.ui.canvas.draw()
+            self.plot_done = True
         except Exception as ex:
             messagebox.showerror("Plot-Fehler", str(ex))
+            self.plot_done = False
             return
 
         # Plot-bezogene Statistik (nur Text)
@@ -234,8 +238,7 @@ class AppController:
 
         elif ptype == "Histogram":
             s = pd.to_numeric(df[ys[0]], errors="coerce")
-            # Bins werden im Plotter automatisch gewählt ('auto')
-            plot_hist(ax, s)
+            plot_hist(ax, s)  # 'auto' bins im Plotter
             self.ui.update_status(f"Histogram: Y={ys[0]}")
 
         elif ptype == "Polar":
@@ -313,8 +316,8 @@ class AppController:
     # PNG speichern
     # -----------------------------
     def on_save_png(self):
-        if self.df is None:
-            messagebox.showinfo("Hinweis", "Bitte zuerst eine Datei laden und einen Plot erzeugen.")
+        if not self.plot_done:
+            messagebox.showinfo("Hinweis", "Kein Plot zum Speichern. Bitte zuerst einen Plot erzeugen.")
             return
         base = "plot"
         if self.current_csv_path:
