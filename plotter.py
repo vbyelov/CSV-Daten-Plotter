@@ -2,7 +2,6 @@
 # ---------------------------------------------------------
 # Reine Zeichenfunktionen für Matplotlib.
 # Erwartung: ax (Axes) wird von außen erzeugt/übergeben.
-# Keine komplexen Konstrukte – Fokus auf Lesbarkeit.
 # ---------------------------------------------------------
 
 import numpy as np
