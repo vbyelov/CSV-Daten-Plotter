@@ -1,279 +1,204 @@
-# ui_main.py
-# Einfache Tkinter-Oberfläche für CSV Daten Plotter
-# - Ordner wählen und CSV-Dateien listen
-# - Spaltenauswahl (X / Y-Mehrfachauswahl)
-# - Plot-Typ wählen und zeichnen
-# - PNG speichern
-# - Statistik-Panel unter dem Plot anzeigen
-
-import os
-import glob
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
-
-from matplotlib.figure import Figure
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-
-# Hinweis: Keine zusätzlichen Pakete nötig. pandas wird in der UI nicht verwendet.
+from tkinter import ttk
+from typing import Callable, List, Optional
 
 
-class MainUI:
-    def __init__(self, root,
-                 on_select_folder=None,
-                 on_select_file=None,
-                 on_plot=None,
-                 on_save_png=None):
-        # Callbacks aus app.py
-        self.on_select_folder = on_select_folder
-        self.on_select_file = on_select_file
-        self.on_plot = on_plot
-        self.on_save_png = on_save_png
+class UIMain(ttk.Frame):
+    """
+    Haupt-UI für das Projekt.
 
-        # Zustand
-        self.current_folder = None
-        self.current_file = None
-        self.plot_type_var = tk.StringVar(value="Line")
+    Änderungen in dieser Version:
+    - Auswahl des Diagrammtyps jetzt über Radiobuttons (statt Combobox)
+    - Klare Gruppierung nach Diagramm-Familien (Line/Area, Bar/Hist, Pie/Polar)
+    - Ein einziges StringVar (chart_type_var) hält den Zustand und triggert den Callback
 
-        # Hauptlayout: links Steuerung, rechts Plot+Statistik
-        self.container = ttk.Frame(root)
-        self.container.pack(fill="both", expand=True)
+    Hinweis zur Integration:
+    - Übergib beim Erzeugen passende Callback-Funktionen aus app.py
+      (siehe __init__-Signatur). Nichts Komplexes – reine Weiterleitung.
+    - Die Schlüsselwerte für Diagrammtypen sind:
+        "line", "stacked_area", "bar", "hist", "pie", "polar"
+      => Diese müssen mit den Keys im Dispatcher in plotter.py übereinstimmen.
+    """
 
-        self.left = ttk.Frame(self.container, padding=8)
-        self.left.pack(side="left", fill="y")
+    # Konstanten: Keys müssen mit plotter.CHHART_HANDLERS übereinstimmen
+    CHART_KEYS = ("line", "stacked_area", "bar", "hist", "pie", "polar")
 
-        self.right = ttk.Frame(self.container, padding=8)
-        self.right.pack(side="right", fill="both", expand=True)
+    def __init__(
+        self,
+        master: tk.Misc,
+        *,
+        on_open_csv: Optional[Callable[[], None]] = None,
+        on_chart_type_changed: Optional[Callable[[str], None]] = None,
+        on_x_changed: Optional[Callable[[str], None]] = None,
+        on_y_changed: Optional[Callable[[str], None]] = None,
+        on_plot_clicked: Optional[Callable[[], None]] = None,
+    ) -> None:
+        super().__init__(master)
+        self.on_open_csv = on_open_csv
+        self.on_chart_type_changed = on_chart_type_changed
+        self.on_x_changed = on_x_changed
+        self.on_y_changed = on_y_changed
+        self.on_plot_clicked = on_plot_clicked
 
-        # ---------------------------
-        # Linke Seite: Ordner/Dateien
-        # ---------------------------
-        self._build_folder_file_block()
+        # ---- Layout-Grundstruktur -------------------------------------------------
+        # Oberer Bereich: CSV-Auswahl
+        self._build_file_frame()
+        # Mittlerer Bereich: Diagrammtyp via Radiobuttons
+        self._build_chart_type_frame()
+        # Bereich für Spaltenauswahl (X/Y)
+        self._build_axes_frame()
+        # Button-Leiste
+        self._build_actions_frame()
 
-        # ---------------------------
-        # Linke Seite: Auswahl/Plot
-        # ---------------------------
-        self._build_controls_block()
+        # Optionale Größenanpassung
+        self.columnconfigure(0, weight=1)
 
-        # ---------------------------
-        # Rechte Seite: Plot + Statistik
-        # ---------------------------
-        self._build_plot_block()
-        self._build_stats_block()
+    # -------------------------------------------------------------------------
+    # Öffentliche Properties / Getter
+    # -------------------------------------------------------------------------
+    @property
+    def chart_type_var(self) -> tk.StringVar:
+        return self._chart_type_var
 
-    # =========================================
-    # Aufbau linke Seite: Ordner und Datei-Liste
-    # =========================================
-    def _build_folder_file_block(self):
-        grp = ttk.LabelFrame(self.left, text="Ordner und CSV", padding=8)
-        grp.pack(fill="x")
+    def get_chart_type(self) -> str:
+        """Liefert den aktuell gewählten Diagrammtyp (Key)."""
+        return self._chart_type_var.get()
 
-        # Ordner wählen
-        btn_folder = ttk.Button(grp, text="Ordner wählen", command=self._choose_folder)
-        btn_folder.pack(fill="x")
-
-        # Dateiliste
-        self.file_list = tk.Listbox(grp, height=12, exportselection=False)
-        self.file_list.pack(fill="both", expand=True, pady=(8, 0))
-
-        # Scrollbar für Dateiliste
-        scrollbar = ttk.Scrollbar(grp, orient="vertical", command=self.file_list.yview)
-        scrollbar.pack(side="right", fill="y")
-        self.file_list.configure(yscrollcommand=scrollbar.set)
-
-        # Event: Datei anklicken
-        self.file_list.bind("<<ListboxSelect>>", self._on_file_click)
-
-    # =========================================
-    # Aufbau linke Seite: Spalten/Plot-Steuerung
-    # =========================================
-    def _build_controls_block(self):
-        grp = ttk.LabelFrame(self.left, text="Auswahl und Plot", padding=8)
-        grp.pack(fill="both", expand=True, pady=(8, 0))
-
-        # Plot-Typ
-        ttk.Label(grp, text="Plot-Typ:").pack(anchor="w")
-        self.plot_type_cb = ttk.Combobox(
-            grp,
-            state="readonly",
-            values=["Line", "Pie", "Histogram", "Stacked Area", "Polar"],
-            textvariable=self.plot_type_var
-        )
-        self.plot_type_cb.pack(fill="x", pady=(0, 8))
-
-        # X-Spalte (einfach)
-        ttk.Label(grp, text="X-Spalte (Kategorie/Datum):").pack(anchor="w")
-        self.x_cb = ttk.Combobox(grp, state="readonly", values=[])
-        self.x_cb.pack(fill="x", pady=(0, 8))
-
-        # Y-Spalten (Mehrfachauswahl)
-        ttk.Label(grp, text="Y-Spalten (numerisch):").pack(anchor="w")
-        self.y_list = tk.Listbox(grp, height=8, selectmode="extended", exportselection=False)
-        self.y_list.pack(fill="both", expand=True)
-
-        y_scroll = ttk.Scrollbar(grp, orient="vertical", command=self.y_list.yview)
-        y_scroll.pack(side="right", fill="y")
-        self.y_list.configure(yscrollcommand=y_scroll.set)
-
-        # Buttons: Plot + PNG speichern
-        btn_plot = ttk.Button(grp, text="Plot zeichnen", command=self._on_plot_click)
-        btn_plot.pack(fill="x", pady=(8, 4))
-
-        btn_save = ttk.Button(grp, text="PNG speichern", command=self._on_save_png_click)
-        btn_save.pack(fill="x")
-
-    # =========================================
-    # Aufbau rechte Seite: Plot und Statistik
-    # =========================================
-    def _build_plot_block(self):
-        grp = ttk.LabelFrame(self.right, text="Diagramm", padding=8)
-        grp.pack(fill="both", expand=True)
-
-        # Matplotlib Figure + Canvas
-        self.figure = Figure(figsize=(6, 4), dpi=100)
-        self.ax = self.figure.add_subplot(111)
-
-        self.canvas = FigureCanvasTkAgg(self.figure, master=grp)
-        self.canvas_widget = self.canvas.get_tk_widget()
-        self.canvas_widget.pack(fill="both", expand=True)
-
-    def _build_stats_block(self):
-        grp = ttk.LabelFrame(self.right, text="Statistik", padding=8)
-        grp.pack(fill="x", expand=False, pady=(8, 0))
-
-        # Textfeld (read-only) für Statistik
-        self.stats_text = tk.Text(grp, height=10, wrap="word")
-        self.stats_text.pack(fill="both", expand=True)
-
-        # read-only simulieren: wir erlauben nur programmatische Änderungen
-        self.stats_text.bind("<Key>", lambda e: "break")
-
-    # =========================================
-    # Öffentliche Methoden (wird von app.py genutzt)
-    # =========================================
-    def list_csv_files(self, folder_path):
-        """Zeigt CSV-Dateien aus dem gewählten Ordner."""
-        self.current_folder = folder_path
-        self.file_list.delete(0, tk.END)
-
-        if not folder_path or not os.path.isdir(folder_path):
-            return
-
-        csvs = sorted(glob.glob(os.path.join(folder_path, "*.csv")))
-        for p in csvs:
-            name = os.path.basename(p)
-            self.file_list.insert(tk.END, name)
-
-    def set_columns(self, columns):
-        """Setzt Spalten in X-Combobox und Y-Liste."""
-        if columns is None:
-            columns = []
-
-        # X
-        self.x_cb["values"] = columns
-        if columns:
-            self.x_cb.set(columns[0])
-        else:
-            self.x_cb.set("")
-
-        # Y
-        self.y_list.delete(0, tk.END)
-        for c in columns:
-            self.y_list.insert(tk.END, c)
-
-    def get_plot_axes(self):
-        """Gibt die aktuelle Achse zurück (wird von app.py genutzt)."""
-        return self.ax
-
-    def draw_canvas(self):
-        """Zeichnet den Canvas neu."""
-        self.figure.tight_layout()
-        self.canvas.draw_idle()
-
-    def update_stats_panel(self, text):
-        """Aktualisiert den Statistik-Text."""
-        self.stats_text.config(state="normal")
-        self.stats_text.delete("1.0", tk.END)
-        if text:
-            self.stats_text.insert(tk.END, text)
-        self.stats_text.config(state="disabled")
-
-    def save_current_plot(self, source_csv_path):
+    def set_columns(self, numeric: List[str], categorical: List[str]) -> None:
         """
-        Speichert das aktuelle Diagramm als PNG.
-        Vorgeschlagener Dateiname basiert auf Quell-CSV und Plot-Typ.
+        Setzt die verfügbaren Spalten für X/Y.
+        - Für X: typischerweise numerisch/zeitlich
+        - Für Y: numerisch (bei Pie: Kategorie + Wert)
         """
-        # Vorschlag für Dateinamen
-        base = "plot"
-        if source_csv_path:
-            base = os.path.splitext(os.path.basename(source_csv_path))[0]
+        self.cmb_x["values"] = numeric + categorical
+        self.cmb_y["values"] = numeric
 
-        plot_type = self.plot_type_var.get() or "Plot"
-        suggested = f"{base}_{plot_type}.png"
+    # -------------------------------------------------------------------------
+    # Interne UI-Bausteine
+    # -------------------------------------------------------------------------
+    def _build_file_frame(self) -> None:
+        # Datei/CSV Auswahl – bewusst minimal gehalten
+        frm = ttk.LabelFrame(self, text="CSV-Datei")
+        frm.grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 4))
+        frm.columnconfigure(1, weight=1)
 
-        file_path = filedialog.asksaveasfilename(
-            title="PNG speichern",
-            defaultextension=".png",
-            initialfile=suggested,
-            filetypes=[("PNG-Bild", "*.png")]
+        ttk.Label(frm, text="Pfad:").grid(row=0, column=0, padx=6, pady=6, sticky="w")
+        self.ent_path = ttk.Entry(frm)
+        self.ent_path.grid(row=0, column=1, padx=6, pady=6, sticky="ew")
+        ttk.Button(frm, text="Öffnen…", command=self._on_open_csv_click).grid(
+            row=0, column=2, padx=6, pady=6
         )
-        if not file_path:
-            return
 
-        try:
-            self.figure.savefig(file_path, format="png")
-            messagebox.showinfo("Gespeichert", f"PNG wurde gespeichert:\n{file_path}")
-        except Exception as ex:
-            messagebox.showerror("Fehler beim Speichern", str(ex))
+    def _build_chart_type_frame(self) -> None:
+        # Radiobuttons zur Auswahl des Diagrammtyps (ersetzt Combobox)
+        lbf = ttk.LabelFrame(self, text="Diagrammtyp")
+        lbf.grid(row=1, column=0, sticky="ew", padx=8, pady=4)
 
-    # =========================================
-    # Interne Event-Handler
-    # =========================================
-    def _choose_folder(self):
-        """Ordnerdialog öffnen und Liste aktualisieren."""
-        path = filedialog.askdirectory(title="Ordner auswählen")
-        if not path:
-            return
-        self.current_folder = path
+        # Ein gemeinsames StringVar für alle Radiobuttons
+        self._chart_type_var = tk.StringVar(value="line")  # Default
 
-        # Callback nach app.py
-        if self.on_select_folder:
-            self.on_select_folder(path)
+        # Drei kompakte Gruppen für bessere Übersicht
+        grp1 = ttk.LabelFrame(lbf, text="Line & Area")
+        grp2 = ttk.LabelFrame(lbf, text="Bar & Hist")
+        grp3 = ttk.LabelFrame(lbf, text="Pie & Polar")
+        grp1.grid(row=0, column=0, padx=6, pady=6, sticky="w")
+        grp2.grid(row=0, column=1, padx=6, pady=6, sticky="w")
+        grp3.grid(row=0, column=2, padx=6, pady=6, sticky="w")
 
-    def _on_file_click(self, event):
-        """Wird ausgelöst, wenn der Nutzer eine Datei in der Liste anklickt."""
-        if self.current_folder is None:
-            return
-        sel = self.file_list.curselection()
-        if not sel:
-            return
+        # Kurzlabels, Werte = Keys für plotter-Dispatcher
+        self._add_radio(grp1, "Line", "line")
+        self._add_radio(grp1, "Stacked Area", "stacked_area")
+        self._add_radio(grp2, "Bar", "bar")
+        self._add_radio(grp2, "Histogram", "hist")
+        self._add_radio(grp3, "Pie", "pie")
+        self._add_radio(grp3, "Polar", "polar")
 
-        name = self.file_list.get(sel[0])
-        full_path = os.path.join(self.current_folder, name)
-        self.current_file = full_path
+    def _add_radio(self, parent: tk.Misc, text: str, value: str) -> None:
+        """Hilfsfunktion: Radiobutton mit gemeinsamem StringVar anlegen."""
+        rb = ttk.Radiobutton(
+            parent,
+            text=text,
+            value=value,
+            variable=self._chart_type_var,
+            command=self._on_chart_type_changed,
+        )
+        # Kompakte Anordnung in zwei Spalten
+        children = len(parent.grid_slaves())
+        r, c = divmod(children, 2)
+        rb.grid(row=r, column=c, padx=4, pady=2, sticky="w")
 
-        # Callback nach app.py
-        if self.on_select_file:
-            self.on_select_file(full_path)
+    def _build_axes_frame(self) -> None:
+        lbf = ttk.LabelFrame(self, text="Achsen / Felder")
+        lbf.grid(row=2, column=0, sticky="ew", padx=8, pady=4)
+        for col in range(4):
+            lbf.columnconfigure(col, weight=1)
 
-    def _on_plot_click(self):
-        """Sammelt die Auswahl und ruft den Plot-Callback auf."""
-        plot_type = self.plot_type_var.get()
+        ttk.Label(lbf, text="X:").grid(row=0, column=0, padx=6, pady=6, sticky="w")
+        self.cmb_x = ttk.Combobox(lbf, state="readonly")
+        self.cmb_x.grid(row=0, column=1, padx=6, pady=6, sticky="ew")
+        self.cmb_x.bind("<<ComboboxSelected>>", self._on_x_selected)
 
-        # X
-        x_col = self.x_cb.get().strip()
-        if x_col == "":
-            x_col = None
+        ttk.Label(lbf, text="Y:").grid(row=0, column=2, padx=6, pady=6, sticky="w")
+        self.cmb_y = ttk.Combobox(lbf, state="readonly")
+        self.cmb_y.grid(row=0, column=3, padx=6, pady=6, sticky="ew")
+        self.cmb_y.bind("<<ComboboxSelected>>", self._on_y_selected)
 
-        # Y (Mehrfachauswahl)
-        y_cols = []
-        for idx in self.y_list.curselection():
-            y_cols.append(self.y_list.get(idx))
+    def _build_actions_frame(self) -> None:
+        frm = ttk.Frame(self)
+        frm.grid(row=3, column=0, sticky="ew", padx=8, pady=(4, 8))
+        frm.columnconfigure(0, weight=1)
 
-        # Callback nach app.py
-        if self.on_plot:
-            self.on_plot(plot_type, x_col, y_cols)
+        self.btn_plot = ttk.Button(frm, text="Plot", command=self._on_plot_click)
+        self.btn_plot.grid(row=0, column=1, padx=6, pady=6, sticky="e")
 
-    def _on_save_png_click(self):
-        """Speicher-Button -> Callback in app.py."""
-        if self.on_save_png:
-            self.on_save_png()
+    # -------------------------------------------------------------------------
+    # Interne Event-Handler – jeweils dünne Weiterleitungen zu app.py
+    # -------------------------------------------------------------------------
+    def _on_open_csv_click(self) -> None:
+        # CSV-Öffnen an app.py delegieren
+        if self.on_open_csv:
+            self.on_open_csv()
+
+    def _on_chart_type_changed(self) -> None:
+        # Reagiert auf Radiobutton-Auswahl
+        if self.on_chart_type_changed:
+            self.on_chart_type_changed(self._chart_type_var.get())
+
+    def _on_x_selected(self, _event: tk.Event) -> None:
+        if self.on_x_changed:
+            self.on_x_changed(self.cmb_x.get())
+
+    def _on_y_selected(self, _event: tk.Event) -> None:
+        if self.on_y_changed:
+            self.on_y_changed(self.cmb_y.get())
+
+    def _on_plot_click(self) -> None:
+        if self.on_plot_clicked:
+            self.on_plot_clicked()
+
+
+# ----------------------------------------------------------------------------
+# Manuelles Testen (optional): Nur wenn Datei direkt ausgeführt wird
+# ----------------------------------------------------------------------------
+if __name__ == "__main__":
+    def _log(msg: str):
+        print(msg)
+
+    root = tk.Tk()
+    root.title("CSV-Daten-Plotter – UI-Test")
+
+    ui = UIMain(
+        root,
+        on_open_csv=lambda: _log("CSV öffnen…"),
+        on_chart_type_changed=lambda key: _log(f"Diagrammtyp: {key}"),
+        on_x_changed=lambda x: _log(f"X geändert: {x}"),
+        on_y_changed=lambda y: _log(f"Y geändert: {y}"),
+        on_plot_clicked=lambda: _log("Plot klicken"),
+    )
+    ui.pack(fill="both", expand=True)
+
+    # Demo: Spalten füllen
+    ui.set_columns(numeric=["A", "B", "C"], categorical=["Stadt", "Land"])
+
+    root.geometry("700x320")
+    root.mainloop()
