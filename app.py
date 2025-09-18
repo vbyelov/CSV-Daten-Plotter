@@ -339,6 +339,7 @@ class AppController:
             messagebox.showerror("Fehler beim Speichern", str(ex))
 
 
+# Make sure that the code inside runs only when the file is executed directly, not when it is imported as a module.
 if __name__ == "__main__":
     root = tk.Tk()
     AppController(root)
