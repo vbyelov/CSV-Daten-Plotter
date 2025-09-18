@@ -4,23 +4,19 @@
 # Fokus: Lesbarkeit und Robustheit (für das Abschlussprojekt).
 # ---------------------------------------------
 
-from __future__ import annotations  # nur für Zukunftssicherheit, schadet nicht
 import pandas as pd
-from typing import Dict, List  # nur Basis-Typen für Klarheit
 
-def _detect_sep(sample: str) -> str:
+def _detect_sep(sample):
     """
     Ermittelt ein wahrscheinliches Trennzeichen aus einer Textprobe.
     Sehr einfache Heuristik: prüft gängige Kandidaten.
     """
     candidates = [",", ";", "\t", "|", ":"]
     counts = {c: sample.count(c) for c in candidates}
-    # Wähle das Zeichen mit den meisten Treffern
     best = max(counts, key=counts.get)
-    # Falls wirklich keine Treffer, nimm Komma als Standard
     return best if counts[best] > 0 else ","
 
-def load_csv(path: str) -> pd.DataFrame:
+def load_csv(path):
     """
     Liest eine CSV-Datei als DataFrame.
     - UTF-8
@@ -51,24 +47,22 @@ def load_csv(path: str) -> pd.DataFrame:
     except pd.errors.EmptyDataError:
         raise RuntimeError("Die Datei scheint leer zu sein oder hat kein gültiges CSV-Format.")
     except Exception as ex:
-        # Allgemeine, aber freundliche Fehlermeldung
         raise RuntimeError(f"CSV konnte nicht geladen werden: {ex}")
 
-def infer_columns(df: pd.DataFrame) -> Dict[str, List[str]]:
+def infer_columns(df):
     """
     Ermittelt einfache Spaltentypen:
     - 'numeric': numerische Spalten (int/float)
     - 'categorical': alle übrigen
-    Hinweis: Datumserkennung erfolgt nicht automatisch (bewusst einfach gehalten).
     """
     numeric = df.select_dtypes(include=["number"]).columns.tolist()
     categorical = [c for c in df.columns if c not in numeric]
     return {"numeric": numeric, "categorical": categorical}
 
-def coerce_numeric(series: pd.Series) -> pd.Series:
+def coerce_numeric(series):
     """
     Versucht, eine Serie numerisch zu interpretieren.
     Nicht konvertierbare Werte werden zu NaN.
-    Gut für Pie/Histogramm, bevor man filtert/aggregiert.
+    Gut für Pie/Histogramm.
     """
     return pd.to_numeric(series, errors="coerce")
