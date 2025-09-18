@@ -1,7 +1,7 @@
 # plotter.py
 # ---------------------------------------------------------
 # Reine Zeichenfunktionen für Matplotlib.
-# Erwartung: ax (Axes) wird von außen erzeugt/übergeben.
+#
 # ---------------------------------------------------------
 
 import numpy as np
@@ -18,6 +18,8 @@ def _as_xy(df: pd.DataFrame, x_col: str):
     - Zahlen/Datum: direkte Werte (bei Datum sortiert der Aufrufer ggf. vorher)
     - Kategorie/Strings: Positionen 0..n-1 + Labels (für Ticks)
     Rückgabe: (x_positions, x_labels oder None)
+
+    Prepare X axis
     """
     x = df[x_col]
     if np.issubdtype(x.dtype, np.number):
@@ -29,12 +31,16 @@ def _as_xy(df: pd.DataFrame, x_col: str):
     return positions, labels
 
 def _apply_xtick_labels(ax: Axes, labels):
-    """Setzt X-Tick-Labels (für kategoriale X)."""
+    """Setzt X-Tick-Labels (für kategoriale X).
+    Apply Labels for X-Tick-Labels.
+    """
     ax.set_xticks(np.arange(len(labels)))
     ax.set_xticklabels(labels, rotation=45, ha="right")
 
 def _ensure_numeric(df: pd.DataFrame, ys: list[str]) -> pd.DataFrame:
-    """Erzwingt numerische Typen für Y-Spalten (nicht konvertierbares -> NaN)."""
+    """Erzwingt numerische Typen für Y-Spalten (nicht konvertierbares -> NaN).
+    Make sure Ys are numbers and no NAN are present.
+    """
     out = df.copy()
     for c in ys:
         out[c] = pd.to_numeric(out[c], errors="coerce")
