@@ -34,10 +34,12 @@ class AppController:
         self.current_csv_path: str | None = None
         self.plot_done: bool = False
 
+
         # Events verbinden
         self.ui.btn_open.configure(command=self.on_open_file)
         self.ui.btn_plot.configure(command=self.on_plot_clicked)
         self.ui.btn_save.configure(command=self.on_save_png)
+
 
         # Menüleiste (Speichern als PNG)
         menu = tk.Menu(root)
@@ -45,6 +47,7 @@ class AppController:
         file_menu.add_command(label="Speichern als PNG", command=self.on_save_png)
         menu.add_cascade(label="Datei", menu=file_menu)
         root.config(menu=menu)
+
 
         # Änderungen beobachten, um Plot-Button zu steuern
         self.ui.plot_type.trace_add("write", lambda *_: self.update_controls_state())
