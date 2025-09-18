@@ -1,6 +1,6 @@
 # ui_main.py
 # -----------------------------------------------
-# Linke Pane fest 400 px, rechte Pane füllt Rest
+# Linke Pane fest 400 px, rechte Pane füllt Rest++
 # -----------------------------------------------
 
 import tkinter as tk

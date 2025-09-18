@@ -1,46 +1,39 @@
 # plotter.py
 # ---------------------------------------------------------
 # Reine Zeichenfunktionen für Matplotlib.
-#
+# Erwartung: ax (Axes) wird von außen erzeugt/übergeben.
 # ---------------------------------------------------------
 
 import numpy as np
 import pandas as pd
-from matplotlib.axes import Axes
 
 # -----------------------------
 # Hilfsfunktionen (intern)
 # -----------------------------
 
-def _as_xy(df: pd.DataFrame, x_col: str):
+def _as_xy(df, x_col):
     """
     Wandelt X-Spalte in einen x-Vektor um.
-    - Zahlen/Datum: direkte Werte (bei Datum sortiert der Aufrufer ggf. vorher)
+    - Zahlen/Datum: direkte Werte
     - Kategorie/Strings: Positionen 0..n-1 + Labels (für Ticks)
     Rückgabe: (x_positions, x_labels oder None)
-
-    Prepare X axis
     """
     x = df[x_col]
     if np.issubdtype(x.dtype, np.number):
-        # numerisch: direkt verwenden, keine Labels nötig
+        # numerisch: direkt verwenden
         return x.values, None
     # alles andere behandeln wir als Kategorie/Text
     positions = np.arange(len(x))
     labels = x.astype(str).values
     return positions, labels
 
-def _apply_xtick_labels(ax: Axes, labels):
-    """Setzt X-Tick-Labels (für kategoriale X).
-    Apply Labels for X-Tick-Labels.
-    """
+def _apply_xtick_labels(ax, labels):
+    """Setzt X-Tick-Labels (für kategoriale X)."""
     ax.set_xticks(np.arange(len(labels)))
     ax.set_xticklabels(labels, rotation=45, ha="right")
 
-def _ensure_numeric(df: pd.DataFrame, ys: list[str]) -> pd.DataFrame:
-    """Erzwingt numerische Typen für Y-Spalten (nicht konvertierbares -> NaN).
-    Make sure Ys are numbers and no NAN are present.
-    """
+def _ensure_numeric(df, ys):
+    """Erzwingt numerische Typen für Y-Spalten (nicht konvertierbares -> NaN)."""
     out = df.copy()
     for c in ys:
         out[c] = pd.to_numeric(out[c], errors="coerce")
@@ -50,7 +43,7 @@ def _ensure_numeric(df: pd.DataFrame, ys: list[str]) -> pd.DataFrame:
 # Öffentliche Plot-Funktionen
 # -----------------------------
 
-def plot_line(ax: Axes, df: pd.DataFrame, x: str, ys: list[str]) -> None:
+def plot_line(ax, df, x, ys):
     """Line-Plot: X Kategorie/Datum/Zahl; Y >= 1 numerisch."""
     if not ys:
         raise ValueError("Mindestens eine Y-Spalte auswählen (Line).")
@@ -66,7 +59,7 @@ def plot_line(ax: Axes, df: pd.DataFrame, x: str, ys: list[str]) -> None:
     ax.legend()
     ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.6)
 
-def plot_stacked_area(ax: Axes, df: pd.DataFrame, x: str, ys: list[str]) -> None:
+def plot_stacked_area(ax, df, x, ys):
     """Stacked Area: X Kategorie/Index/Datum; Y >= 1 (besser >=2) numerisch."""
     if len(ys) < 1:
         raise ValueError("Für Stacked Area bitte mindestens eine (besser zwei) Y-Spalten wählen.")
@@ -82,7 +75,7 @@ def plot_stacked_area(ax: Axes, df: pd.DataFrame, x: str, ys: list[str]) -> None
     ax.legend(loc="upper left")
     ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.6)
 
-def plot_pie(ax: Axes, df: pd.DataFrame, label_col: str, value_col: str, top_n: int = 8) -> None:
+def plot_pie(ax, df, label_col, value_col, top_n=8):
     """
     Pie-Chart mit Cleaning/Aggregation:
       1) value numerisch
@@ -115,24 +108,22 @@ def plot_pie(ax: Axes, df: pd.DataFrame, label_col: str, value_col: str, top_n: 
     )
     ax.set_title("Pie")
 
-def plot_hist(ax: Axes, series: pd.Series, bins: int | str | None = "auto") -> None:
+def plot_hist(ax, series, bins="auto"):
     """
     Histogramm (vereinfachte Variante):
     - genau 1 numerische Serie
     - 'bins' standardmäßig 'auto' (Matplotlib-Default-Strategie)
-      -> Der Nutzer muss keinen Wert eingeben.
     """
     s = pd.to_numeric(series, errors="coerce").dropna()
     if s.empty:
         raise ValueError("Histogramm: keine numerischen Daten nach Cleaning.")
-    # bins kann int oder 'auto' sein – hier 'auto' als Standard
     ax.hist(s.values, bins=bins, edgecolor="black", alpha=0.8)
     ax.set_xlabel(series.name if series.name else "Wert")
     ax.set_ylabel("Häufigkeit")
     ax.set_title("Histogram")
     ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.6)
 
-def plot_polar(ax: Axes, series: pd.Series) -> None:
+def plot_polar(ax, series):
     """Polar-Plot: eine numerische Serie, theta gleichmäßig 0..2π."""
     r = pd.to_numeric(series, errors="coerce").dropna().values
     if r.size == 0:

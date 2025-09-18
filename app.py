@@ -1,12 +1,12 @@
 # app.py
 # ------------------------------------------------------
 # Hauptsteuerung der Anwendung:
-# - CSV laden
-# - Spaltenlisten füllen (ohne Vorauswahl)
-# - Validierung je Diagrammtyp
-# - Plot ausführen (ruft plotter.*)
-# - Statistik (nur als Text in "Details") anzeigen
-# - PNG speichern (Menü + Button neben Plot)
+# - CSV laden +
+# - Spaltenlisten füllen (ohne Vorauswahl) +
+# - Validierung je Diagrammtyp +
+# - Plot ausführen (ruft plotter.*) +
+# - Statistik (nur als Text in "Details") anzeigen +
+# - PNG speichern (Menü + Button neben Plot) +-
 # ------------------------------------------------------
 
 import os
