@@ -1,6 +1,6 @@
 """
 Einfaches GUI-Smoketest-Fenster (tkinter)
-Ziel: Schnell zeigen, dass Buttons und Eingabefelder vorhanden sind und reagieren.
+version 0.5
 - Keine externen Abhängigkeiten (nur Standardbibliothek)
 - Optional: CSV-Header mit csv.Sniffer erkennen und in Comboboxen laden
 """
